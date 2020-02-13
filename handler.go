@@ -1,25 +1,28 @@
 package main
 
 import (
-	"time"
 	"net/http"
+	"time"
 
-	"github.com/labstack/echo"
 	"github.com/dgrijalva/jwt-go"
+	"github.com/labstack/echo"
 
 )
 
-type handler struct {}
+type handler struct{}
+
 type LoginData struct {
-	Id  string `json:"Id" form:"Id" query:"Id"`
-	Password string `json:"Password" form:"Password" query:"Password"`
+	Id       string `json:"id" form:"id" query:"id"`
+	Password string `json:"password" form:"password" query:"password"`
 }
 type RegisterData struct {
-	Id  string `json:"Id" form:"Id" query:"Id"`
-	Password string `json:"Password" form:"Password" query:"Password"`
-	Name  string `json:"Name" form:"Name" query:"Name"`
-	Email string `json:"Email" form:"Email" query:"Email"`
+	Id       string `json:"id" form:"id" query:"id"`
+	Password string `json:"password" form:"password" query:"password"`
+	Name     string `json:"name" form:"name" query:"name"`
+	Email    string `json:"email" form:"email" query:"email"`
+	Age      int    `json:"age" form:"age" query:"age"`
 }
+
 type ResponseData struct {
 	Result  string `json:"result" form:"result" query:"result"`
 	Message string `json:"message" form:"message" query:"message"`
@@ -27,10 +30,21 @@ type ResponseData struct {
 
 func (h *handler) userLogin(c echo.Context) error {
 	data := new(LoginData)
-	c.Bind(data)
 	token := jwt.New(jwt.SigningMethodHS256)
-
 	claims := token.Claims.(jwt.MapClaims)
+
+	c.Bind(data)
+
+	u, err := GetUser(Database, data.Id)
+	if err != nil {
+		return c.JSON(http.StatusOK, map[string]string{
+			"token": "", "succeed": "false", "message": "id is not exist",
+		})
+	} else if u.Password != data.Password {
+		return c.JSON(http.StatusOK, map[string]string{
+			"token": "", "succeed": "false", "message": "password is not correct",
+		})
+	}
 	claims["id"] = data.Id
 	claims["exp"] = time.Now().Add(time.Hour * 72).Unix()
 
@@ -38,27 +52,31 @@ func (h *handler) userLogin(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-
-	//sqlite3 database search done
-
 	return c.JSON(http.StatusOK, map[string]string{
-		"token": t, "succeed" : "true", "id": data.Id,
+		"token": t, "succeed": "true",
 	})
 }
 func (h *handler) userRegister(c echo.Context) error {
 	data := new(RegisterData)
-	c.Bind(data);
-	
-	response := ResponseData{Result:"true", Message:"register succeed"}
+	c.Bind(data)
 
-	//sqlite3 database create done
+	response := ResponseData{Result: "true", Message: "register succeed"}
 
-	return c.JSON(http.StatusOK,response)
+	err := AddUser(Database, data.Id, data.Password, data.Name, data.Age, data.Email)
+	errorCheck(err)
+
+	return c.JSON(http.StatusOK, response)
 }
 
 func (h *handler) privateInfo(c echo.Context) error {
 	user := c.Get("user").(*jwt.Token)
-    claims := user.Claims.(jwt.MapClaims)
-    id := claims["id"].(string)
-    return c.String(http.StatusOK, "Welcome "+id+"!")
+	claims := user.Claims.(jwt.MapClaims)
+	id := claims["id"].(string)
+
+	data, err := GetUser(Database, id)
+
+	if err != nil {
+		return c.JSON(http.StatusOK, ResponseData{Result: "false", Message: "No results"})
+	}
+	return c.JSON(http.StatusOK, data)
 }
