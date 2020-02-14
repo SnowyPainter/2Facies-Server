@@ -35,8 +35,6 @@ func main() {
 	errorCheck(err)
 	Database = db
 
-	AddUser(db, "a", "password", "name", 13, "email address")
-
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
 

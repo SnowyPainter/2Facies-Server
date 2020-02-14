@@ -1,11 +1,13 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/labstack/echo"
+	"golang.org/x/crypto/bcrypt"
 
 )
 
@@ -34,13 +36,14 @@ func (h *handler) userLogin(c echo.Context) error {
 	claims := token.Claims.(jwt.MapClaims)
 
 	c.Bind(data)
-
+	//data.password to bcrypt byted password
 	u, err := GetUser(Database, data.Id)
 	if err != nil {
 		return c.JSON(http.StatusOK, map[string]string{
 			"token": "", "succeed": "false", "message": "id is not exist",
 		})
-	} else if u.Password != data.Password {
+	} else if err := bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(data.Password)); err != nil { // !
+		fmt.Println(err)
 		return c.JSON(http.StatusOK, map[string]string{
 			"token": "", "succeed": "false", "message": "password is not correct",
 		})
@@ -61,9 +64,16 @@ func (h *handler) userRegister(c echo.Context) error {
 	c.Bind(data)
 
 	response := ResponseData{Result: "true", Message: "register succeed"}
-
-	err := AddUser(Database, data.Id, data.Password, data.Name, data.Age, data.Email)
-	errorCheck(err)
+	hash, err := bcrypt.GenerateFromPassword([]byte(data.Password), bcrypt.DefaultCost)
+	if err != nil {
+		response.Result = "false"
+		response.Message = "bcrypt error"
+	}
+	err = AddUser(Database, data.Id, string(hash), data.Name, data.Age, data.Email)
+	if err != nil {
+		response.Result = "false"
+		response.Message = "database error"
+	}
 
 	return c.JSON(http.StatusOK, response)
 }
