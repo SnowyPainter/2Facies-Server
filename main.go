@@ -30,6 +30,7 @@ var Database *sql.DB
 
 func main() {
 	e := echo.New()
+	hub := newHub()
 	handlers := &handler{}
 	db, err := InitDB("./database/2facies.db")
 	errorCheck(err)
@@ -39,11 +40,20 @@ func main() {
 	e.Use(middleware.Recover())
 
 	e.GET("/", func(c echo.Context) error {
-		return c.String(http.StatusOK, "Hello, World!")
+		return c.String(http.StatusOK, "")
 	})
+	e.GET("/api/client/version", handlers.clientVersion)
+
 	e.GET("/user/me", handlers.privateInfo, IsLoggedIn)
+	e.GET("/user/:id", handlers.publicInfo)
+
 	e.POST("/user/login", handlers.userLogin)
 	e.POST("/user/register", handlers.userRegister)
+
+	go hub.run()
+	e.GET("/ws", func(c echo.Context) error {
+		return handlers.ws(hub, c)
+	})
 
 	e.Logger.Fatal(e.Start(":8000"))
 }
