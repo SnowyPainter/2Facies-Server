@@ -4,7 +4,7 @@ import "log"
 
 type Hub struct {
 	clients    map[*Client]bool
-	broadcast  chan []byte
+	broadcast  chan *RoomBroadcast
 	register   chan *Client
 	unregister chan *Client
 	join       chan *Client
@@ -16,10 +16,14 @@ type Room struct {
 	id      string
 	clients map[*Client]bool
 }
+type RoomBroadcast struct {
+	room    string
+	message []byte
+}
 
 func newHub() *Hub {
 	return &Hub{
-		broadcast:  make(chan []byte),
+		broadcast:  make(chan *RoomBroadcast),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		join:       make(chan *Client),
@@ -34,6 +38,12 @@ func newRoom(roomId string) *Room {
 		clients: make(map[*Client]bool),
 	}
 }
+func newRoomBroadcast(roomId string, msg []byte) *RoomBroadcast {
+	return &RoomBroadcast{
+		room:    roomId,
+		message: msg,
+	}
+}
 
 func (h *Hub) run() {
 	for {
@@ -44,38 +54,37 @@ func (h *Hub) run() {
 		case client := <-h.unregister: //close connection
 			log.Println("unregister")
 			if _, ok := h.clients[client]; ok { //check the closing conn had connected
-				delete(h.rooms[client.room].clients, client)
+				if r, ok := h.rooms[client.room]; ok && r.clients[client] {
+					log.Println("unregister, del client in room")
+					delete(h.rooms[client.room].clients, client)
+					if r, ok := h.rooms[client.room]; ok && len(r.clients) < 1 {
+						log.Println("unregister, del room")
+						delete(h.rooms, client.room)
+					}
+				}
 				delete(h.clients, client)
 				close(client.send)
 			}
 		case client := <-h.join:
 			roomId := client.room
-			if _, ok := h.rooms[roomId]; ok {
-				log.Println(len(h.rooms[roomId].clients))
-				for c, b := range h.rooms[roomId].clients {
-					log.Println(b)
-					select {
-					case c.send <- []byte("New hello!!"):
-					default:
-						close(c.send)
-						delete(h.rooms[roomId].clients, c)
-					}
-				}
-			} else {
-				log.Println(ok)
+			if _, ok := h.rooms[roomId]; !ok {
+				log.Println("join the room is not exist [hub]")
 			}
 		case client := <-h.leave:
 			roomId := client.room
 			if _, ok := h.rooms[roomId].clients[client]; ok {
 				delete(h.rooms[roomId].clients, client)
-				log.Println("Leave room left:", len(h.rooms[roomId].clients))
+				if len(h.rooms[roomId].clients) < 1 {
+					log.Println("delete room ")
+					delete(h.rooms, roomId)
+				}
 			}
-		case message := <-h.broadcast: //add channel value to send all msgs
+		case bc := <-h.broadcast: //broadcast to all clients in room
 			//space @, middle one is room name
 			//axess room h.rooms[rid].clients
-			for client := range h.clients {
+			for client := range h.rooms[bc.room].clients {
 				select {
-				case client.send <- message:
+				case client.send <- append([]byte("message@"), bc.message...):
 				default:
 					close(client.send)
 					delete(h.clients, client)

@@ -7,6 +7,12 @@ import (
 
 )
 
+var (
+	newline = []byte{'\n'}
+	space   = []byte{' '}
+	alpha   = []byte{'@'}
+)
+
 func RandomHex(n int) (string, error) {
 	bytes := make([]byte, n)
 	if _, err := rand.Read(bytes); err != nil {
@@ -23,4 +29,14 @@ func DeleteFirst(t []byte, e []byte) []byte {
 		result[i-f] = t[i]
 	}
 	return result
+}
+
+func SplitHeaderBody(b []byte) (header [][]byte, body []byte) {
+	b = bytes.TrimSpace(bytes.Replace(b, newline, space, -1))
+	div := bytes.Split(b, alpha)
+	header = bytes.Split(div[0], space)
+	body = div[1]
+	//log.Println("Header[0]:", string(header[0]), "\nHeader[1]", string(header[1]))
+	//log.Println("body:", string(body))
+	return
 }

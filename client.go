@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"log"
 	"time"
 	"utility"
@@ -15,11 +14,6 @@ const (
 	pongWait       = 60 * time.Second
 	pingPeriod     = (pongWait * 9) / 10
 	maxMessageSize = 512
-)
-
-var (
-	newline = []byte{'\n'}
-	space   = []byte{' '}
 )
 
 type Client struct {
@@ -45,32 +39,33 @@ func (c *Client) readPump() {
 			}
 			break
 		}
-		message = bytes.TrimSpace(bytes.Replace(message, newline, space, -1))
-		header := string(bytes.Split(message, space)[0])
-		switch header {
+		header, body := utility.SplitHeaderBody(message)
+
+		switch string(header[0]) {
 		case "broadcast":
-			c.hub.broadcast <- utility.DeleteFirst(message, space) //resend all message
+			roomBc := newRoomBroadcast(string(header[1]), body)
+			c.hub.broadcast <- roomBc //resend all message
 		case "join":
-			rId := string(utility.DeleteFirst(message, space))
+			rId := string(header[1])
 			c.room = rId
 			if _, ok := c.hub.rooms[rId]; ok { // exist room
-				log.Println("exist room", rId)
+				//log.Println("exist room", rId)
 				c.hub.rooms[rId].clients[c] = true
 			} else { //create new room
-				log.Println("create new", rId)
+				//log.Println("create new", rId)
 				room := newRoom(rId)
 				room.clients[c] = true
 				c.hub.rooms[rId] = room
 			}
 			c.hub.join <- c
 		case "leave":
-			c.room = string(utility.DeleteFirst(message, space))
+			c.room = string(header[1])
 			c.hub.leave <- c
 		}
 	}
 }
 
-func (c *Client) writePump() { //loop for hub.broadcast's send channel input
+func (c *Client) writePump() { //loop for hub.broadcast's send channel inputww
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
@@ -85,7 +80,6 @@ func (c *Client) writePump() { //loop for hub.broadcast's send channel input
 				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
-			log.Println(string(message))
 			w, err := c.conn.NextWriter(websocket.TextMessage)
 			if err != nil {
 				return
@@ -95,7 +89,7 @@ func (c *Client) writePump() { //loop for hub.broadcast's send channel input
 			// Add queued chat messages to the current websocket message.
 			n := len(c.send)
 			for i := 0; i < n; i++ {
-				w.Write(newline)
+				w.Write([]byte{'\n'})
 				w.Write(<-c.send)
 			}
 
