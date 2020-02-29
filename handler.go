@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"net/http"
 	"time"
@@ -28,6 +29,10 @@ type ResponseData struct {
 	Result  string `json:"result" form:"result" query:"result"`
 	Message string `json:"message" form:"message" query:"message"`
 }
+type RoomData struct {
+	Title        string `json:"Title" form:"title" query:"title"`
+	Participants int    `json:"Participants" form:"participants" query:"participants"`
+}
 
 var (
 	upgrader = websocket.Upgrader{}
@@ -37,14 +42,15 @@ func (h *handler) clientVersion(c echo.Context) error {
 	return c.String(http.StatusOK, "v0.0.1")
 }
 
-func (h *handler) userLogin(c echo.Context) error {
+//user interact
+func (h *handler) userLogin(db *sql.DB, c echo.Context) error {
 	data := new(LoginData)
 	token := jwt.New(jwt.SigningMethodHS256)
 	claims := token.Claims.(jwt.MapClaims)
 
 	c.Bind(data)
 	//data.password to bcrypt byted password
-	u, err := GetUser(Database, data.Id)
+	u, err := GetUser(db, data.Id)
 	if err != nil {
 		return c.JSON(http.StatusOK, map[string]string{
 			"token": "", "succeed": "false", "message": "id is not exist",
@@ -66,7 +72,7 @@ func (h *handler) userLogin(c echo.Context) error {
 		"token": t, "succeed": "true",
 	})
 }
-func (h *handler) userRegister(c echo.Context) error {
+func (h *handler) userRegister(db *sql.DB, c echo.Context) error {
 	data := new(RegisterData)
 	c.Bind(data)
 
@@ -76,7 +82,7 @@ func (h *handler) userRegister(c echo.Context) error {
 		response.Result = "false"
 		response.Message = "bcrypt error"
 	}
-	err = AddUser(Database, data.Id, string(hash), data.Name, data.Age, data.Email)
+	err = AddUser(db, data.Id, string(hash), data.Name, data.Age, data.Email)
 	if err != nil {
 		response.Result = "false"
 		response.Message = "database error"
@@ -85,25 +91,40 @@ func (h *handler) userRegister(c echo.Context) error {
 	return c.JSON(http.StatusOK, response)
 }
 
-func (h *handler) privateInfo(c echo.Context) error {
+//data get,set
+func (h *handler) privateInfo(db *sql.DB, c echo.Context) error {
 	user := c.Get("user").(*jwt.Token)
 	claims := user.Claims.(jwt.MapClaims)
 	id := claims["id"].(string)
 
-	data, err := GetUser(Database, id)
+	data, err := GetUser(db, id)
 
 	if err != nil {
 		return c.JSON(http.StatusOK, ResponseData{Result: "false", Message: "No results"})
 	}
 	return c.JSON(http.StatusOK, data)
 }
-func (h *handler) publicInfo(c echo.Context) error {
+func (h *handler) publicInfo(db *sql.DB, c echo.Context) error {
 	id := c.Param("id")
-	data, err := GetUserPublic(Database, id)
+	data, err := GetUserPublic(db, id)
 	if err != nil {
 		return c.JSON(http.StatusOK, ResponseData{Result: "false", Message: "No results"})
 	}
 	return c.JSON(http.StatusOK, data)
+}
+func (h *handler) roomList(hub *Hub, c echo.Context) error {
+	roomCount := len(hub.rooms)
+	if roomCount < 1 {
+		return c.JSON(http.StatusOK, make([]RoomData, 0))
+	}
+
+	list := make([]RoomData, roomCount-1)
+	for k, v := range hub.rooms {
+		r := RoomData{Title: k, Participants: len(v.clients)}
+		list = append(list, r)
+	}
+
+	return c.JSON(http.StatusOK, list)
 }
 
 //it works.

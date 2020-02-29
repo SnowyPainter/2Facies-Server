@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql"
 	"log"
 	"net/http"
 	"time"
@@ -26,15 +25,12 @@ func errorCheck(err error) {
 	}
 }
 
-var Database *sql.DB
-
 func main() {
 	e := echo.New()
 	hub := newHub()
 	handlers := &handler{}
 	db, err := InitDB("./database/2facies.db")
 	errorCheck(err)
-	Database = db
 
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
@@ -44,11 +40,22 @@ func main() {
 	})
 	e.GET("/api/client/version", handlers.clientVersion)
 
-	e.GET("/user/me", handlers.privateInfo, IsLoggedIn)
-	e.GET("/user/:id", handlers.publicInfo)
+	e.GET("/user/me", func(c echo.Context) error {
+		return handlers.privateInfo(db, c)
+	}, IsLoggedIn)
+	e.GET("/user/:id", func(c echo.Context) error {
+		return handlers.publicInfo(db, c)
+	})
+	e.GET("/list/room", func(c echo.Context) error {
+		return handlers.roomList(hub, c)
+	})
 
-	e.POST("/user/login", handlers.userLogin)
-	e.POST("/user/register", handlers.userRegister)
+	e.POST("/user/login", func(c echo.Context) error {
+		return handlers.userLogin(db, c)
+	})
+	e.POST("/user/register", func(c echo.Context) error {
+		return handlers.userRegister(db, c)
+	})
 
 	go hub.run()
 	e.GET("/ws", func(c echo.Context) error {

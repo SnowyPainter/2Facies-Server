@@ -36,6 +36,7 @@ func (c *Client) readPump() {
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Printf("error: %v", err)
+				c.hub.errors <- newError(UnexceptError, c)
 			}
 			break
 		}
@@ -48,15 +49,6 @@ func (c *Client) readPump() {
 		case "join":
 			rId := string(header[1])
 			c.room = rId
-			if _, ok := c.hub.rooms[rId]; ok { // exist room
-				//log.Println("exist room", rId)
-				c.hub.rooms[rId].clients[c] = true
-			} else { //create new room
-				//log.Println("create new", rId)
-				room := newRoom(rId)
-				room.clients[c] = true
-				c.hub.rooms[rId] = room
-			}
 			c.hub.join <- c
 		case "leave":
 			c.room = string(header[1])

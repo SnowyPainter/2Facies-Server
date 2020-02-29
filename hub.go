@@ -1,9 +1,21 @@
 package main
 
-import "log"
+import (
+	"log"
+	"strconv"
+
+)
+
+const (
+	ConnectionError = 101
+	UnexceptError   = 102
+	RoomJoinError   = 301
+	RoomLeaveError  = 302
+)
 
 type Hub struct {
 	clients    map[*Client]bool
+	errors     chan *ErrorClient
 	broadcast  chan *RoomBroadcast
 	register   chan *Client
 	unregister chan *Client
@@ -20,9 +32,14 @@ type RoomBroadcast struct {
 	room    string
 	message []byte
 }
+type ErrorClient struct {
+	client *Client
+	code   int
+}
 
 func newHub() *Hub {
 	return &Hub{
+		errors:     make(chan *ErrorClient),
 		broadcast:  make(chan *RoomBroadcast),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
@@ -44,21 +61,26 @@ func newRoomBroadcast(roomId string, msg []byte) *RoomBroadcast {
 		message: msg,
 	}
 }
+func newError(ecode int, c *Client) *ErrorClient {
+	return &ErrorClient{
+		code:   ecode,
+		client: c,
+	}
+}
 
 func (h *Hub) run() {
 	for {
 		select {
+		case code := <-h.errors:
+			code.client.send <- []byte("error@" + strconv.Itoa(code.code))
 		case client := <-h.register: //wait for register request for clients
 			h.clients[client] = true
 
 		case client := <-h.unregister: //close connection
-			log.Println("unregister")
 			if _, ok := h.clients[client]; ok { //check the closing conn had connected
 				if r, ok := h.rooms[client.room]; ok && r.clients[client] {
-					log.Println("unregister, del client in room")
 					delete(h.rooms[client.room].clients, client)
 					if r, ok := h.rooms[client.room]; ok && len(r.clients) < 1 {
-						log.Println("unregister, del room")
 						delete(h.rooms, client.room)
 					}
 				}
@@ -67,15 +89,19 @@ func (h *Hub) run() {
 			}
 		case client := <-h.join:
 			roomId := client.room
-			if _, ok := h.rooms[roomId]; !ok {
-				log.Println("join the room is not exist [hub]")
+			if _, ok := h.rooms[roomId]; ok { // exist room
+				h.rooms[roomId].clients[client] = true
+			} else { //create new room
+				log.Println("create new room")
+				room := newRoom(roomId)
+				room.clients[client] = true
+				h.rooms[roomId] = room
 			}
 		case client := <-h.leave:
 			roomId := client.room
 			if _, ok := h.rooms[roomId].clients[client]; ok {
 				delete(h.rooms[roomId].clients, client)
 				if len(h.rooms[roomId].clients) < 1 {
-					log.Println("delete room ")
 					delete(h.rooms, roomId)
 				}
 			}
