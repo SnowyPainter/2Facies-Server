@@ -14,14 +14,15 @@ const (
 )
 
 type Hub struct {
-	clients    map[*Client]bool
-	errors     chan *ErrorClient
-	broadcast  chan *RoomBroadcast
-	register   chan *Client
-	unregister chan *Client
-	join       chan *Client
-	leave      chan *Client
-	rooms      map[string]*Room
+	clients      map[*Client]bool
+	errors       chan *ErrorClient
+	register     chan *Client
+	unregister   chan *Client
+	join         chan *Client
+	leave        chan *Client
+	broadcast    chan *RoomBroadcast
+	participants chan string
+	rooms        map[string]*Room
 }
 
 type Room struct {
@@ -30,6 +31,7 @@ type Room struct {
 }
 type RoomBroadcast struct {
 	room    string
+	caster  *Client
 	message []byte
 }
 type ErrorClient struct {
@@ -39,14 +41,15 @@ type ErrorClient struct {
 
 func newHub() *Hub {
 	return &Hub{
-		errors:     make(chan *ErrorClient),
-		broadcast:  make(chan *RoomBroadcast),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
-		join:       make(chan *Client),
-		leave:      make(chan *Client),
-		clients:    make(map[*Client]bool),
-		rooms:      make(map[string]*Room),
+		errors:       make(chan *ErrorClient),
+		broadcast:    make(chan *RoomBroadcast),
+		register:     make(chan *Client),
+		unregister:   make(chan *Client),
+		join:         make(chan *Client),
+		leave:        make(chan *Client),
+		participants: make(chan string),
+		clients:      make(map[*Client]bool),
+		rooms:        make(map[string]*Room),
 	}
 }
 func newRoom(roomId string) *Room {
@@ -55,10 +58,11 @@ func newRoom(roomId string) *Room {
 		clients: make(map[*Client]bool),
 	}
 }
-func newRoomBroadcast(roomId string, msg []byte) *RoomBroadcast {
+func newRoomBroadcast(roomId string, msg []byte, broadcaster *Client) *RoomBroadcast {
 	return &RoomBroadcast{
 		room:    roomId,
 		message: msg,
+		caster:  broadcaster,
 	}
 }
 func newError(ecode int, c *Client) *ErrorClient {
@@ -90,27 +94,53 @@ func (h *Hub) run() {
 		case client := <-h.join:
 			roomId := client.room
 			if _, ok := h.rooms[roomId]; ok { // exist room
-				h.rooms[roomId].clients[client] = true
+				if !h.rooms[roomId].clients[client] {
+					log.Println("new user came")
+					h.rooms[roomId].clients[client] = true
+				}
 			} else { //create new room
-				log.Println("create new room")
+				log.Println("create new room", roomId)
 				room := newRoom(roomId)
 				room.clients[client] = true
 				h.rooms[roomId] = room
 			}
 		case client := <-h.leave:
 			roomId := client.room
-			if _, ok := h.rooms[roomId].clients[client]; ok {
-				delete(h.rooms[roomId].clients, client)
-				if len(h.rooms[roomId].clients) < 1 {
-					delete(h.rooms, roomId)
+			if _, ok := h.rooms[roomId]; ok {
+				if _, ok := h.rooms[roomId].clients[client]; ok {
+					delete(h.rooms[roomId].clients, client)
+					if len(h.rooms[roomId].clients) < 1 {
+						log.Println("room deleted")
+						delete(h.rooms, roomId)
+					}
 				}
 			}
+
 		case bc := <-h.broadcast: //broadcast to all clients in room
 			//space @, middle one is room name
 			//axess room h.rooms[rid].clients
 			for client := range h.rooms[bc.room].clients {
+				if client == bc.caster {
+					log.Println("caster ignore")
+					continue
+				}
+
 				select {
 				case client.send <- append([]byte("message@"), bc.message...):
+				default:
+					close(client.send)
+					delete(h.clients, client)
+				}
+			}
+		case r := <-h.participants:
+			p := []byte(strconv.Itoa(len(h.rooms[r].clients)))
+			log.Println(r)
+			for client := range h.rooms[r].clients {
+				/*if client == c {
+					continue
+				}*/
+				select {
+				case client.send <- append([]byte("participants@"), p...):
 				default:
 					close(client.send)
 					delete(h.clients, client)

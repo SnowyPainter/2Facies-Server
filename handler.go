@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+	"utility"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/websocket"
@@ -30,6 +31,7 @@ type ResponseData struct {
 	Message string `json:"message" form:"message" query:"message"`
 }
 type RoomData struct {
+	Id           string `json:"Id" form:"Id" query:"Id"`
 	Title        string `json:"Title" form:"title" query:"title"`
 	Participants int    `json:"Participants" form:"participants" query:"participants"`
 }
@@ -120,7 +122,8 @@ func (h *handler) roomList(hub *Hub, c echo.Context) error {
 
 	list := make([]RoomData, roomCount-1)
 	for k, v := range hub.rooms {
-		r := RoomData{Title: k, Participants: len(v.clients)}
+		h, _ := utility.RandomHex(3)
+		r := RoomData{Id: k, Title: string(h), Participants: len(v.clients)}
 		list = append(list, r)
 	}
 

@@ -44,7 +44,7 @@ func (c *Client) readPump() {
 
 		switch string(header[0]) {
 		case "broadcast":
-			roomBc := newRoomBroadcast(string(header[1]), body)
+			roomBc := newRoomBroadcast(string(header[1]), body, c)
 			c.hub.broadcast <- roomBc //resend all message
 		case "join":
 			rId := string(header[1])
@@ -53,6 +53,8 @@ func (c *Client) readPump() {
 		case "leave":
 			c.room = string(header[1])
 			c.hub.leave <- c
+		case "participants":
+			c.hub.participants <- string(header[1])
 		}
 	}
 }
