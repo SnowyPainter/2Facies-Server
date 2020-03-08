@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
 	"net/http"
 	"time"
 	"utility"
@@ -52,19 +51,23 @@ func (h *handler) userLogin(db *sql.DB, c echo.Context) error {
 
 	c.Bind(data)
 	//data.password to bcrypt byted password
-	u, err := GetUser(db, data.Id)
-	if err != nil {
+
+	if err := Login(db, data.Id, data.Password); err != nil {
+		if err == bcrypt.ErrMismatchedHashAndPassword {
+			return c.JSON(http.StatusOK, map[string]string{
+				"token": "", "succeed": "false", "message": "password is not correct",
+			})
+		} else if err == ErrAlreadyLogined {
+			return c.JSON(http.StatusOK, map[string]string{
+				"token": "", "succeed": "false", "message": "already logined",
+			})
+		}
 		return c.JSON(http.StatusOK, map[string]string{
 			"token": "", "succeed": "false", "message": "id is not exist",
 		})
-	} else if err := bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(data.Password)); err != nil { // !
-		fmt.Println(err)
-		return c.JSON(http.StatusOK, map[string]string{
-			"token": "", "succeed": "false", "message": "password is not correct",
-		})
 	}
 	claims["id"] = data.Id
-	claims["exp"] = time.Now().Add(time.Hour * 72).Unix()
+	claims["exp"] = time.Now().Add(time.Hour * 24).Unix()
 
 	t, err := token.SignedString([]byte("secret"))
 	if err != nil {
@@ -91,6 +94,17 @@ func (h *handler) userRegister(db *sql.DB, c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, response)
+}
+func (h *handler) userLogout(db *sql.DB, c echo.Context) error {
+	user := c.Get("user").(*jwt.Token)
+	claims := user.Claims.(jwt.MapClaims)
+	id := claims["id"].(string)
+
+	if err := Logout(db, id); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 //data get,set

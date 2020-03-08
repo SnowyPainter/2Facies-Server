@@ -2,10 +2,15 @@ package main
 
 import (
 	"database/sql"
+	"errors"
+	"log"
 
 	_ "github.com/mattn/go-sqlite3"
+	"golang.org/x/crypto/bcrypt"
 
 )
+
+var ErrAlreadyLogined error = errors.New("Already logined. cannot login")
 
 type User struct {
 	Id       int    `json:"id" form:"id" query:"id"`
@@ -14,6 +19,7 @@ type User struct {
 	Name     string `json:"name" form:"name" query:"name"`
 	Age      string `json:"age" form:"age" query:"age"`
 	Email    string `json:"email" form:"email" query:"email"`
+	Login    int    `json:"login" form:"login" query:"login"`
 }
 type PublicUser struct {
 	Id   string `json:"id" form:"id" query:"id"`
@@ -29,12 +35,14 @@ func InitDB(file string) (*sql.DB, error) {
 
 	createTableQuery := `
 		create table IF NOT EXISTS useraccount ( 
-		id integer primary key autoincrement,
-		userId text primary key,
+		id integer PRIMARY KEY autoincrement,
+		userId text,
 		password text,
 		name text,
 		age integer,
-		email text
+		email text,
+		login integer,
+		UNIQUE (id, userId)
 		)
 	`
 	_, e := createTable(db, createTableQuery)
@@ -48,12 +56,14 @@ func createTable(db *sql.DB, query string) (sql.Result, error) {
 }
 func AddUser(db *sql.DB, id string, password string, name string, age int, email string) error {
 	tx, _ := db.Begin()
-	stmt, _ := tx.Prepare("insert into useraccount (userId,password,name,age,email) values (?,?,?,?,?)")
-	_, err := stmt.Exec(id, password, name, age, email)
+	stmt, _ := tx.Prepare("insert into useraccount (userId,password,name,age,email, login) values (?,?,?,?,?,?)")
+	_, err := stmt.Exec(id, password, name, age, email, 0)
 	if err != nil {
+		log.Println(err.Error())
 		return err
 	}
 	tx.Commit()
+	log.Println("register done")
 	return nil
 }
 
@@ -61,7 +71,7 @@ func GetUser(db *sql.DB, userId string) (User, error) {
 	var user User
 	rows := db.QueryRow("select * from useraccount where userId = $1", userId)
 	err := rows.Scan(&user.Id, &user.UserId, &user.Password, &user.Name,
-		&user.Age, &user.Email)
+		&user.Age, &user.Email, &user.Login)
 	if err != nil {
 		return User{}, err
 	}
@@ -79,7 +89,38 @@ func GetUserPublic(db *sql.DB, userId string) (User, error) {
 
 	return user, nil
 }
+func Login(db *sql.DB, userId string, password string) error {
+	u, err := GetUser(db, userId)
+	if err != nil {
+		log.Println("Get user Err, ", err.Error())
+		return err
+	} else if pwerr := bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(password)); err != nil { // not same
+		log.Println("Password err, ", pwerr.Error())
+		return pwerr
 
-func LoginCheck(db *sql.DB, userId string, password string) error {
+	}
+	if u.Login == 1 {
+		log.Println("Logined Err")
+		return ErrAlreadyLogined
+	}
+	tx, _ := db.Begin()
+	stmt, _ := tx.Prepare("update useraccount set login=1 where userId=?")
+	_, dberr := stmt.Exec(u.UserId)
+	if dberr != nil {
+		log.Println("db error, ", dberr.Error())
+		return dberr
+	}
+	tx.Commit()
+	return nil
+}
+func Logout(db *sql.DB, userId string) error {
+	tx, _ := db.Begin()
+	stmt, _ := tx.Prepare("update useraccount set login=0 where userId=?")
+	_, dberr := stmt.Exec(userId)
+	if dberr != nil {
+		log.Println("logout error, ", dberr.Error())
+		return dberr
+	}
+	tx.Commit()
 	return nil
 }

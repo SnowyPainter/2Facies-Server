@@ -56,6 +56,9 @@ func main() {
 	e.POST("/user/register", func(c echo.Context) error {
 		return handlers.userRegister(db, c)
 	})
+	e.GET("/user/logout", func(c echo.Context) error {
+		return handlers.userLogout(db, c)
+	}, IsLoggedIn)
 
 	go hub.run()
 	e.GET("/ws", func(c echo.Context) error {
