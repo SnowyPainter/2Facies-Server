@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"strconv"
 	"time"
 	"utility"
 
@@ -36,7 +37,7 @@ func (c *Client) readPump() {
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Printf("error: %v", err)
-				c.hub.errors <- newError(UnexceptError, c)
+				c.send <- []byte("error@" + strconv.Itoa(UnexceptError))
 			}
 			break
 		}

@@ -11,11 +11,14 @@ const (
 	UnexceptError   = 102
 	RoomJoinError   = 301
 	RoomLeaveError  = 302
+	ChatSend        = 401
+	ChatConnect     = 402
+	ChatRecv        = 403
+	NotFound        = 501
 )
 
 type Hub struct {
 	clients      map[*Client]bool
-	errors       chan *ErrorClient
 	register     chan *Client
 	unregister   chan *Client
 	join         chan *Client
@@ -34,14 +37,9 @@ type RoomBroadcast struct {
 	caster  *Client
 	message []byte
 }
-type ErrorClient struct {
-	client *Client
-	code   int
-}
 
 func newHub() *Hub {
 	return &Hub{
-		errors:       make(chan *ErrorClient),
 		broadcast:    make(chan *RoomBroadcast),
 		register:     make(chan *Client),
 		unregister:   make(chan *Client),
@@ -65,18 +63,10 @@ func newRoomBroadcast(roomId string, msg []byte, broadcaster *Client) *RoomBroad
 		caster:  broadcaster,
 	}
 }
-func newError(ecode int, c *Client) *ErrorClient {
-	return &ErrorClient{
-		code:   ecode,
-		client: c,
-	}
-}
 
 func (h *Hub) run() {
 	for {
 		select {
-		case code := <-h.errors:
-			code.client.send <- []byte("error@" + strconv.Itoa(code.code))
 		case client := <-h.register: //wait for register request for clients
 			h.clients[client] = true
 
@@ -110,10 +100,11 @@ func (h *Hub) run() {
 				if _, ok := h.rooms[roomId].clients[client]; ok {
 					delete(h.rooms[roomId].clients, client)
 					if len(h.rooms[roomId].clients) < 1 {
-						log.Println("room deleted")
 						delete(h.rooms, roomId)
 					}
 				}
+			} else {
+				client.send <- []byte("error@" + strconv.Itoa(NotFound))
 			}
 
 		case bc := <-h.broadcast: //broadcast to all clients in room
@@ -121,7 +112,6 @@ func (h *Hub) run() {
 			//axess room h.rooms[rid].clients
 			for client := range h.rooms[bc.room].clients {
 				if client == bc.caster {
-					log.Println("caster ignore")
 					continue
 				}
 
