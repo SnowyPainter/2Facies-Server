@@ -1,22 +1,27 @@
 package main
 
 import (
+	"database/sql"
 	"log"
 	"net/http"
-	"time"
 
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
 	_ "github.com/mattn/go-sqlite3"
-
 )
 
-func newCookie(name string, value string, expires time.Time) *http.Cookie {
-	c := new(http.Cookie)
-	c.Name = name
-	c.Value = value
-	c.Expires = expires
-	return c
+type dbHandler func(db *sql.DB, c echo.Context) error
+type socketHandler func(h *Hub, c echo.Context) error
+
+func newDBHandler(h dbHandler, db *sql.DB) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		return h(db, c)
+	}
+}
+func newSocketHandler(h socketHandler, hub *Hub) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		return h(hub, c)
+	}
 }
 
 func errorCheck(err error) {
@@ -32,6 +37,8 @@ func main() {
 	db, err := InitDB("./database/2facies.db")
 	errorCheck(err)
 
+	go hub.run()
+
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
 
@@ -40,30 +47,16 @@ func main() {
 	})
 	e.GET("/api/client/version", handlers.clientVersion)
 
-	e.GET("/user/me", func(c echo.Context) error {
-		return handlers.privateInfo(db, c)
-	}, IsLoggedIn)
-	e.GET("/user/:id", func(c echo.Context) error {
-		return handlers.publicInfo(db, c)
-	})
-	e.GET("/list/room", func(c echo.Context) error {
-		return handlers.roomList(hub, c)
-	})
+	e.GET("/user/me", newDBHandler(handlers.privateInfo, db), IsLoggedIn)
+	e.GET("/user/:id", newDBHandler(handlers.publicInfo, db))
 
-	e.POST("/user/login", func(c echo.Context) error {
-		return handlers.userLogin(db, c)
-	})
-	e.POST("/user/register", func(c echo.Context) error {
-		return handlers.userRegister(db, c)
-	})
-	e.GET("/user/logout", func(c echo.Context) error {
-		return handlers.userLogout(db, c)
-	}, IsLoggedIn)
+	e.POST("/user/login", newDBHandler(handlers.userLogin, db))
+	e.POST("/user/register", newDBHandler(handlers.userRegister, db))
+	e.GET("/user/logout", newDBHandler(handlers.userLogout, db), IsLoggedIn)
 
-	go hub.run()
-	e.GET("/ws", func(c echo.Context) error {
-		return handlers.ws(hub, c)
-	})
+	e.GET("/list/room/:limits", newSocketHandler(handlers.roomList, hub))
+	e.GET("/list/room/connectable", newSocketHandler(handlers.connectableRoom, hub))
+	e.GET("/ws", newSocketHandler(handlers.ws, hub))
 
 	e.Logger.Fatal(e.Start(":8000"))
 }

@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 	"strconv"
-
+	"utility"
 )
 
 const (
@@ -11,6 +11,7 @@ const (
 	UnexceptError   = 102
 	RoomJoinError   = 301
 	RoomLeaveError  = 302
+	RoomFull        = 303
 	ChatSend        = 401
 	ChatConnect     = 402
 	ChatRecv        = 403
@@ -29,8 +30,10 @@ type Hub struct {
 }
 
 type Room struct {
-	id      string
-	clients map[*Client]bool
+	id         string
+	title      string
+	clients    map[*Client]bool
+	maxClients int
 }
 type RoomBroadcast struct {
 	room    string
@@ -50,10 +53,13 @@ func newHub() *Hub {
 		rooms:        make(map[string]*Room),
 	}
 }
-func newRoom(roomId string) *Room {
+func newRoom(roomId string, maxClients int) *Room {
+	hexTitle, _ := utility.RandomHex(5)
 	return &Room{
-		id:      roomId,
-		clients: make(map[*Client]bool),
+		id:         roomId,
+		title:      hexTitle,
+		clients:    make(map[*Client]bool),
+		maxClients: maxClients,
 	}
 }
 func newRoomBroadcast(roomId string, msg []byte, broadcaster *Client) *RoomBroadcast {
@@ -83,23 +89,29 @@ func (h *Hub) run() {
 			}
 		case client := <-h.join:
 			roomId := client.room
-			if _, ok := h.rooms[roomId]; ok { // exist room
-				if !h.rooms[roomId].clients[client] {
-					log.Println("new user came")
+			if room, ok := h.rooms[roomId]; ok { // exist room
+				if len(room.clients) >= room.maxClients {
+					log.Println("FULL ROOm")
+					client.send <- []byte("error@" + strconv.Itoa(RoomFull))
+				} else if !room.clients[client] {
+					log.Println("clinet joined", roomId)
 					h.rooms[roomId].clients[client] = true
 				}
-			} else { //create new room
-				log.Println("create new room", roomId)
-				room := newRoom(roomId)
+			} else {
+				log.Println("room created", roomId)
+				room := newRoom(roomId, 2)
 				room.clients[client] = true
-				h.rooms[roomId] = room
+				h.rooms[room.id] = room
+				//client.send <- []byte("error@" + strconv.Itoa(NotFound))
 			}
 		case client := <-h.leave:
 			roomId := client.room
 			if _, ok := h.rooms[roomId]; ok {
 				if _, ok := h.rooms[roomId].clients[client]; ok {
+					log.Println("client leave", roomId)
 					delete(h.rooms[roomId].clients, client)
 					if len(h.rooms[roomId].clients) < 1 {
+						log.Println(roomId, "deleted")
 						delete(h.rooms, roomId)
 					}
 				}
@@ -123,17 +135,20 @@ func (h *Hub) run() {
 				}
 			}
 		case r := <-h.participants:
-			p := []byte(strconv.Itoa(len(h.rooms[r].clients)))
 			log.Println(r)
-			for client := range h.rooms[r].clients {
-				/*if client == c {
-					continue
-				}*/
-				select {
-				case client.send <- append([]byte("participants@"), p...):
-				default:
-					close(client.send)
-					delete(h.clients, client)
+			//room still alive -> client in there
+			if room, ok := h.rooms[r]; ok {
+				p := []byte(strconv.Itoa(len(room.clients)))
+				for client := range h.rooms[r].clients {
+					/*if client == c {
+						continue
+					}*/
+					select {
+					case client.send <- append([]byte("participants@"), p...):
+					default:
+						close(client.send)
+						delete(h.clients, client)
+					}
 				}
 			}
 		}

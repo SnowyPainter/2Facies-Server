@@ -2,15 +2,15 @@ package main
 
 import (
 	"database/sql"
+	"log"
 	"net/http"
+	"strconv"
 	"time"
-	"utility"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo"
 	"golang.org/x/crypto/bcrypt"
-
 )
 
 type handler struct{}
@@ -33,11 +33,23 @@ type RoomData struct {
 	Id           string `json:"Id" form:"Id" query:"Id"`
 	Title        string `json:"Title" form:"title" query:"title"`
 	Participants int    `json:"Participants" form:"participants" query:"participants"`
+	Max          int    `json:"Max" form:"max" query:"max"`
 }
 
 var (
 	upgrader = websocket.Upgrader{}
 )
+
+func (room *Room) ToRoomData() RoomData {
+	data := RoomData{
+		Id:           room.id,
+		Max:          room.maxClients,
+		Title:        room.title,
+		Participants: len(room.clients),
+	}
+
+	return data
+}
 
 func (h *handler) clientVersion(c echo.Context) error {
 	return c.String(http.StatusOK, "v0.0.1")
@@ -133,19 +145,44 @@ func (h *handler) roomList(hub *Hub, c echo.Context) error {
 	if roomCount < 1 {
 		return c.JSON(http.StatusOK, make([]RoomData, 0))
 	}
-
+	limit, err := strconv.Atoi(c.Param("limits"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "Limits must be Intager")
+	}
 	list := make([]RoomData, roomCount-1)
+	i := 0
 	for k, v := range hub.rooms {
-		h, _ := utility.RandomHex(3)
-		r := RoomData{Id: k, Title: string(h), Participants: len(v.clients)}
+		if i >= limit {
+			break
+		}
+		r := RoomData{Id: k, Title: v.title, Participants: len(v.clients), Max: v.maxClients}
 		list = append(list, r)
+		i++
 	}
 
 	return c.JSON(http.StatusOK, list)
 }
+func (h *handler) connectableRoom(hub *Hub, c echo.Context) error {
+	const searchLimit = 3
+	roomPackets := make([]RoomData, searchLimit)
+	searchCount := 0
+	for _, room := range hub.rooms {
+		log.Println("count", searchCount)
+		if searchCount >= searchLimit {
+			break
+		}
+		if len(room.clients) < room.maxClients {
+			log.Println("toroomdata", room.ToRoomData().Id)
+			roomPackets[searchCount] = room.ToRoomData()
+		}
 
-//it works.
-//first, 'Client' would send data then processed with readPump
+		searchCount++
+	}
+	roomPackets = roomPackets[:searchCount]
+	return c.JSON(http.StatusOK, roomPackets)
+}
+
+//'Client' would send data then processed with readPump
 //after readPump get the data, readPump handle message to use hub. events e.g. broadcast
 //readPump -> PROCESS -> hub.broadcast or some events ...
 func (h *handler) ws(hub *Hub, c echo.Context) error {

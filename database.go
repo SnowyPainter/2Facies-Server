@@ -63,7 +63,6 @@ func AddUser(db *sql.DB, id string, password string, name string, age int, email
 		return err
 	}
 	tx.Commit()
-	log.Println("register done")
 	return nil
 }
 
