@@ -62,10 +62,9 @@ func (h *handler) userLogin(db *sql.DB, c echo.Context) error {
 	claims := token.Claims.(jwt.MapClaims)
 
 	c.Bind(data)
-	//data.password to bcrypt byted password
 
 	if err := Login(db, data.Id, data.Password); err != nil {
-		if err == bcrypt.ErrMismatchedHashAndPassword {
+		if err == ErrPasswordNotMatch {
 			return c.JSON(http.StatusOK, map[string]string{
 				"token": "", "succeed": "false", "message": "password is not correct",
 			})
@@ -73,10 +72,15 @@ func (h *handler) userLogin(db *sql.DB, c echo.Context) error {
 			return c.JSON(http.StatusOK, map[string]string{
 				"token": "", "succeed": "false", "message": "already logined",
 			})
+		} else if err == ErrIdNotFound {
+			return c.JSON(http.StatusOK, map[string]string{
+				"token": "", "succeed": "false", "message": "id is not exist",
+			})
+		} else {
+			return c.JSON(http.StatusOK, map[string]string{
+				"token": "", "succeed": "false", "message": "not expected error",
+			})
 		}
-		return c.JSON(http.StatusOK, map[string]string{
-			"token": "", "succeed": "false", "message": "id is not exist",
-		})
 	}
 	claims["id"] = data.Id
 	claims["exp"] = time.Now().Add(time.Hour * 24).Unix()
@@ -92,13 +96,13 @@ func (h *handler) userLogin(db *sql.DB, c echo.Context) error {
 func (h *handler) userRegister(db *sql.DB, c echo.Context) error {
 	data := new(RegisterData)
 	c.Bind(data)
-
 	response := ResponseData{Result: "true", Message: "register succeed"}
 	hash, err := bcrypt.GenerateFromPassword([]byte(data.Password), bcrypt.DefaultCost)
 	if err != nil {
 		response.Result = "false"
 		response.Message = "bcrypt error"
 	}
+
 	err = AddUser(db, data.Id, string(hash), data.Name, data.Age, data.Email)
 	if err != nil {
 		response.Result = "false"
@@ -172,7 +176,6 @@ func (h *handler) connectableRoom(hub *Hub, c echo.Context) error {
 			break
 		}
 		if len(room.clients) < room.maxClients {
-			log.Println("toroomdata", room.ToRoomData().Id)
 			roomPackets[searchCount] = room.ToRoomData()
 		}
 

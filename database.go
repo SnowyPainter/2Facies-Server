@@ -5,12 +5,14 @@ import (
 	"errors"
 	"log"
 
-	_ "github.com/mattn/go-sqlite3"
 	"golang.org/x/crypto/bcrypt"
 
+	_ "github.com/mattn/go-sqlite3"
 )
 
 var ErrAlreadyLogined error = errors.New("Already logined. cannot login")
+var ErrPasswordNotMatch error = errors.New("Password don't match. cannot login")
+var ErrIdNotFound error = errors.New("Id couldn't be found")
 
 type User struct {
 	Id       int    `json:"id" form:"id" query:"id"`
@@ -90,16 +92,12 @@ func GetUserPublic(db *sql.DB, userId string) (User, error) {
 }
 func Login(db *sql.DB, userId string, password string) error {
 	u, err := GetUser(db, userId)
-	if err != nil {
-		log.Println("Get user Err, ", err.Error())
-		return err
-	} else if pwerr := bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(password)); err != nil { // not same
-		log.Println("Password err, ", pwerr.Error())
-		return pwerr
 
-	}
-	if u.Login == 1 {
-		log.Println("Logined Err")
+	if err != nil {
+		return ErrIdNotFound
+	} else if pwerr := CompareBcrypt([]byte(u.Password), []byte(password)); pwerr != nil { // not same
+		return ErrPasswordNotMatch
+	} else if u.Login == 1 {
 		return ErrAlreadyLogined
 	}
 	tx, _ := db.Begin()
@@ -121,5 +119,14 @@ func Logout(db *sql.DB, userId string) error {
 		return dberr
 	}
 	tx.Commit()
+	return nil
+}
+
+func CompareBcrypt(hash []byte, plain []byte) error {
+	err := bcrypt.CompareHashAndPassword(hash, plain)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
