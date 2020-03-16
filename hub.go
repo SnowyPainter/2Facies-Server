@@ -3,7 +3,6 @@ package main
 import (
 	"log"
 	"strconv"
-	"utility"
 )
 
 const (
@@ -12,16 +11,19 @@ const (
 	RoomJoinError   = 301
 	RoomLeaveError  = 302
 	RoomFull        = 303
+	ExistRoom       = 304
 	ChatSend        = 401
 	ChatConnect     = 402
 	ChatRecv        = 403
 	NotFound        = 501
+	FormatError     = 001
 )
 
 type Hub struct {
 	clients      map[*Client]bool
 	register     chan *Client
 	unregister   chan *Client
+	createRoom   chan *Room
 	join         chan *Client
 	leave        chan *Client
 	broadcast    chan *RoomBroadcast
@@ -46,6 +48,7 @@ func newHub() *Hub {
 		broadcast:    make(chan *RoomBroadcast),
 		register:     make(chan *Client),
 		unregister:   make(chan *Client),
+		createRoom:   make(chan *Room),
 		join:         make(chan *Client),
 		leave:        make(chan *Client),
 		participants: make(chan string),
@@ -53,11 +56,11 @@ func newHub() *Hub {
 		rooms:        make(map[string]*Room),
 	}
 }
-func newRoom(roomId string, maxClients int) *Room {
-	hexTitle, _ := utility.RandomHex(5)
+func newRoom(roomId string, title string, maxClients int) *Room {
+	//hexTitle, _ := utility.RandomHex(5)
 	return &Room{
 		id:         roomId,
-		title:      hexTitle,
+		title:      title,
 		clients:    make(map[*Client]bool),
 		maxClients: maxClients,
 	}
@@ -90,17 +93,25 @@ func (h *Hub) run() {
 		case client := <-h.join:
 			roomId := client.room
 			if room, ok := h.rooms[roomId]; ok { // exist room
+
 				if len(room.clients) >= room.maxClients {
-					log.Println("FULL ROOm")
 					client.send <- []byte("error@" + strconv.Itoa(RoomFull))
 				} else if !room.clients[client] {
-					log.Println("clinet joined", roomId)
 					h.rooms[roomId].clients[client] = true
 				}
 			} else {
-				log.Println("room created", roomId)
-				room := newRoom(roomId, 2)
-				room.clients[client] = true
+
+				log.Println("NOT FOUND")
+				client.send <- []byte("error@" + strconv.Itoa(NotFound))
+			}
+		//NOT SAFE................
+		case room := <-h.createRoom:
+			if _, ok := h.rooms[room.id]; ok { // exist room
+				for c, _ := range room.clients {
+					c.send <- []byte("error@" + strconv.Itoa(ExistRoom))
+				}
+			} else {
+				log.Println("room created", room.id)
 				h.rooms[room.id] = room
 				//client.send <- []byte("error@" + strconv.Itoa(NotFound))
 			}
@@ -126,7 +137,6 @@ func (h *Hub) run() {
 				if client == bc.caster {
 					continue
 				}
-
 				select {
 				case client.send <- append([]byte("message@"), bc.message...):
 				default:
@@ -135,10 +145,10 @@ func (h *Hub) run() {
 				}
 			}
 		case r := <-h.participants:
-			log.Println(r)
 			//room still alive -> client in there
 			if room, ok := h.rooms[r]; ok {
 				p := []byte(strconv.Itoa(len(room.clients)))
+				log.Println("ROOM ", room.id, "participants", len(room.clients))
 				for client := range h.rooms[r].clients {
 					/*if client == c {
 						continue

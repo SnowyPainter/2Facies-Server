@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"strconv"
+	"strings"
 	"time"
 	"utility"
 
@@ -46,6 +47,18 @@ func (c *Client) readPump() {
 		case "broadcast":
 			roomBc := newRoomBroadcast(string(header[1]), body, c)
 			c.hub.broadcast <- roomBc //resend all message
+		case "create":
+			data := strings.Split(string(body), " ")
+			if val, err := strconv.Atoi(data[1]); err == nil {
+				r := newRoom(strconv.Itoa(len(c.hub.rooms)), data[0], val)
+				r.clients[c] = true
+				c.hub.createRoom <- r
+				c.send <- []byte("created@" + r.id)
+
+			} else {
+				c.send <- []byte("error@" + strconv.Itoa(FormatError))
+			}
+
 		case "join":
 			rId := string(header[1])
 			c.room = rId
