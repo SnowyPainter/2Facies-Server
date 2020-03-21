@@ -6,17 +6,23 @@ import (
 )
 
 const (
-	ConnectionError = 101
-	UnexceptError   = 102
-	RoomJoinError   = 301
-	RoomLeaveError  = 302
-	RoomFull        = 303
-	ExistRoom       = 304
-	ChatSend        = 401
-	ChatConnect     = 402
-	ChatRecv        = 403
-	NotFound        = 501
-	FormatError     = 001
+	ConnectionError   = 101
+	UnexceptError     = 102
+	RoomJoinError     = 301
+	RoomLeaveError    = 302
+	RoomFull          = 303
+	ExistRoom         = 304
+	ChatSend          = 401
+	ChatConnect       = 402
+	ChatRecv          = 403
+	NotFound          = 501
+	FormatError       = 001
+	IncorrectDataType = 002
+)
+
+const (
+	TypeTextBroadcast  = 1
+	TypeAudioBroadcast = 2
 )
 
 type Hub struct {
@@ -38,9 +44,10 @@ type Room struct {
 	maxClients int
 }
 type RoomBroadcast struct {
-	room    string
-	caster  *Client
-	message []byte
+	room     string
+	caster   *Client
+	message  []byte
+	dataType int
 }
 
 func newHub() *Hub {
@@ -65,11 +72,12 @@ func newRoom(roomId string, title string, maxClients int) *Room {
 		maxClients: maxClients,
 	}
 }
-func newRoomBroadcast(roomId string, msg []byte, broadcaster *Client) *RoomBroadcast {
+func newRoomBroadcast(roomId string, msg []byte, broadcaster *Client, typeOfData int) *RoomBroadcast {
 	return &RoomBroadcast{
-		room:    roomId,
-		message: msg,
-		caster:  broadcaster,
+		room:     roomId,
+		message:  msg,
+		caster:   broadcaster,
+		dataType: typeOfData,
 	}
 }
 
@@ -100,8 +108,6 @@ func (h *Hub) run() {
 					h.rooms[roomId].clients[client] = true
 				}
 			} else {
-
-				log.Println("NOT FOUND")
 				client.send <- []byte("error@" + strconv.Itoa(NotFound))
 			}
 		//NOT SAFE................
@@ -133,17 +139,31 @@ func (h *Hub) run() {
 		case bc := <-h.broadcast: //broadcast to all clients in room
 			//space @, middle one is room name
 			//axess room h.rooms[rid].clients
-			for client := range h.rooms[bc.room].clients {
-				if client == bc.caster {
-					continue
+			if bc.dataType == TypeAudioBroadcast {
+				for client := range h.rooms[bc.room].clients {
+					select {
+					case client.send <- append([]byte("message-audio@"), bc.message...):
+					default:
+						close(client.send)
+						delete(h.clients, client)
+					}
 				}
-				select {
-				case client.send <- append([]byte("message@"), bc.message...):
-				default:
-					close(client.send)
-					delete(h.clients, client)
+			} else if bc.dataType == TypeTextBroadcast {
+				for client := range h.rooms[bc.room].clients {
+					if client == bc.caster {
+						continue
+					}
+					select {
+					case client.send <- append([]byte("message@"), bc.message...):
+					default:
+						close(client.send)
+						delete(h.clients, client)
+					}
 				}
+			} else {
+				bc.caster.send <- []byte("error@" + strconv.Itoa(IncorrectDataType))
 			}
+
 		case r := <-h.participants:
 			//room still alive -> client in there
 			if room, ok := h.rooms[r]; ok {

@@ -14,7 +14,7 @@ const (
 	writeWait      = 10 * time.Second
 	pongWait       = 60 * time.Second
 	pingPeriod     = (pongWait * 9) / 10
-	maxMessageSize = 512
+	maxMessageSize = 200000
 )
 
 type Client struct {
@@ -42,20 +42,23 @@ func (c *Client) readPump() {
 			break
 		}
 		header, body := utility.SplitHeaderBody(message)
-
 		switch string(header[0]) {
 		case "broadcast":
-			roomBc := newRoomBroadcast(string(header[1]), body, c)
+			roomBc := newRoomBroadcast(string(header[1]), body, c, TypeTextBroadcast)
+			c.hub.broadcast <- roomBc //resend all message
+		case "broadcast-audio":
+			roomBc := newRoomBroadcast(string(header[1]), body, c, TypeAudioBroadcast)
 			c.hub.broadcast <- roomBc //resend all message
 		case "create":
 			data := strings.Split(string(body), " ")
 			if val, err := strconv.Atoi(data[1]); err == nil {
+
 				r := newRoom(strconv.Itoa(len(c.hub.rooms)), data[0], val)
 				r.clients[c] = true
 				c.hub.createRoom <- r
 				c.send <- []byte("created@" + r.id)
-
 			} else {
+				log.Println("format error ", string(data[1]))
 				c.send <- []byte("error@" + strconv.Itoa(FormatError))
 			}
 
