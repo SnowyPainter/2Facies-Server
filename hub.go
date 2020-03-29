@@ -1,28 +1,7 @@
 package main
 
 import (
-	"log"
 	"strconv"
-)
-
-const (
-	ConnectionError   = 101
-	UnexceptError     = 102
-	RoomJoinError     = 301
-	RoomLeaveError    = 302
-	RoomFull          = 303
-	ExistRoom         = 304
-	ChatSend          = 401
-	ChatConnect       = 402
-	ChatRecv          = 403
-	NotFound          = 501
-	FormatError       = 001
-	IncorrectDataType = 002
-)
-
-const (
-	TypeTextBroadcast  = 1
-	TypeAudioBroadcast = 2
 )
 
 type Hub struct {
@@ -103,46 +82,39 @@ func (h *Hub) run() {
 			if room, ok := h.rooms[roomId]; ok { // exist room
 
 				if len(room.clients) >= room.maxClients {
-					client.send <- []byte("error@" + strconv.Itoa(RoomFull))
+					client.send <- []byte(errorHeader + "@" + strconv.Itoa(RoomFull))
 				} else if !room.clients[client] {
 					h.rooms[roomId].clients[client] = true
 				}
 			} else {
-				client.send <- []byte("error@" + strconv.Itoa(NotFound))
+				client.send <- []byte(errorHeader + "@" + strconv.Itoa(NotFound))
 			}
-		//NOT SAFE................
 		case room := <-h.createRoom:
 			if _, ok := h.rooms[room.id]; ok { // exist room
 				for c, _ := range room.clients {
-					c.send <- []byte("error@" + strconv.Itoa(ExistRoom))
+					c.send <- []byte(errorHeader + "@" + strconv.Itoa(ExistRoom))
 				}
 			} else {
-				log.Println("room created", room.id)
 				h.rooms[room.id] = room
-				//client.send <- []byte("error@" + strconv.Itoa(NotFound))
 			}
 		case client := <-h.leave:
 			roomId := client.room
 			if _, ok := h.rooms[roomId]; ok {
 				if _, ok := h.rooms[roomId].clients[client]; ok {
-					log.Println("client leave", roomId)
 					delete(h.rooms[roomId].clients, client)
 					if len(h.rooms[roomId].clients) < 1 {
-						log.Println(roomId, "deleted")
 						delete(h.rooms, roomId)
 					}
 				}
 			} else {
-				client.send <- []byte("error@" + strconv.Itoa(NotFound))
+				client.send <- []byte(errorHeader + "@" + strconv.Itoa(NotFound))
 			}
 
-		case bc := <-h.broadcast: //broadcast to all clients in room
-			//space @, middle one is room name
-			//axess room h.rooms[rid].clients
+		case bc := <-h.broadcast:
 			if bc.dataType == TypeAudioBroadcast {
 				for client := range h.rooms[bc.room].clients {
 					select {
-					case client.send <- append([]byte("message-audio@"), bc.message...):
+					case client.send <- append([]byte(broadcastAudioHeader+"@"), bc.message...):
 					default:
 						close(client.send)
 						delete(h.clients, client)
@@ -154,27 +126,24 @@ func (h *Hub) run() {
 						continue
 					}
 					select {
-					case client.send <- append([]byte("message@"), bc.message...):
+					case client.send <- append([]byte(broadcastHeader+"@"), bc.message...):
 					default:
 						close(client.send)
 						delete(h.clients, client)
 					}
 				}
 			} else {
-				bc.caster.send <- []byte("error@" + strconv.Itoa(IncorrectDataType))
+				bc.caster.send <- []byte(errorHeader + "@" + strconv.Itoa(IncorrectDataType))
 			}
 
 		case r := <-h.participants:
 			//room still alive -> client in there
 			if room, ok := h.rooms[r]; ok {
 				p := []byte(strconv.Itoa(len(room.clients)))
-				log.Println("ROOM ", room.id, "participants", len(room.clients))
+
 				for client := range h.rooms[r].clients {
-					/*if client == c {
-						continue
-					}*/
 					select {
-					case client.send <- append([]byte("participants@"), p...):
+					case client.send <- append([]byte(participantsHeader+"@"), p...):
 					default:
 						close(client.send)
 						delete(h.clients, client)

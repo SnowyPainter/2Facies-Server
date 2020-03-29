@@ -37,39 +37,40 @@ func (c *Client) readPump() {
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Printf("error: %v", err)
-				c.send <- []byte("error@" + strconv.Itoa(UnexceptError))
+				c.send <- []byte(errorHeader + "@" + strconv.Itoa(UnexceptError))
 			}
 			break
 		}
 		header, body := utility.SplitHeaderBody(message)
+
 		switch string(header[0]) {
-		case "broadcast":
+		case broadcastHeader:
 			roomBc := newRoomBroadcast(string(header[1]), body, c, TypeTextBroadcast)
 			c.hub.broadcast <- roomBc //resend all message
-		case "broadcast-audio":
+		case broadcastAudioHeader:
 			roomBc := newRoomBroadcast(string(header[1]), body, c, TypeAudioBroadcast)
 			c.hub.broadcast <- roomBc //resend all message
-		case "create":
+		case createHeaer:
 			data := strings.Split(string(body), " ")
 			if val, err := strconv.Atoi(data[1]); err == nil {
 
 				r := newRoom(strconv.Itoa(len(c.hub.rooms)), data[0], val)
 				r.clients[c] = true
 				c.hub.createRoom <- r
-				c.send <- []byte("created@" + r.id)
+				c.send <- []byte(createHeaer + "@" + r.id)
 			} else {
 				log.Println("format error ", string(data[1]))
-				c.send <- []byte("error@" + strconv.Itoa(FormatError))
+				c.send <- []byte(errorHeader + "@" + strconv.Itoa(FormatError))
 			}
 
-		case "join":
+		case joinHeader:
 			rId := string(header[1])
 			c.room = rId
 			c.hub.join <- c
-		case "leave":
+		case leaveHeader:
 			c.room = string(header[1])
 			c.hub.leave <- c
-		case "participants":
+		case participantsHeader:
 			c.hub.participants <- string(header[1])
 		}
 	}

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/hex"
-
 )
 
 var (
@@ -32,11 +31,11 @@ func DeleteFirst(t []byte, e []byte) []byte {
 }
 
 func SplitHeaderBody(b []byte) (header [][]byte, body []byte) {
+
 	b = bytes.TrimSpace(bytes.Replace(b, newline, space, -1))
 	div := bytes.Split(b, alpha)
 	header = bytes.Split(div[0], space)
 	body = div[1]
-	//log.Println("Header[0]:", string(header[0]), "\nHeader[1]", string(header[1]))
-	//log.Println("body:", string(body))
+
 	return
 }
