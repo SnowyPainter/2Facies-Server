@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"packet"
 	"strconv"
 	"strings"
 	"time"
@@ -14,7 +15,7 @@ const (
 	writeWait      = 10 * time.Second
 	pongWait       = 60 * time.Second
 	pingPeriod     = (pongWait * 9) / 10
-	maxMessageSize = 200000
+	maxMessageSize = 35000
 )
 
 type Client struct {
@@ -29,6 +30,7 @@ func (c *Client) readPump() {
 		c.hub.unregister <- c
 		c.conn.Close()
 	}()
+
 	c.conn.SetReadLimit(maxMessageSize)
 	c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.conn.SetPongHandler(func(string) error { c.conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
@@ -37,40 +39,39 @@ func (c *Client) readPump() {
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Printf("error: %v", err)
-				c.send <- []byte(errorHeader + "@" + strconv.Itoa(UnexceptError))
+				c.send <- []byte(packet.ErrorHeader + "@" + strconv.Itoa(packet.UnexceptError))
 			}
 			break
 		}
 		header, body := utility.SplitHeaderBody(message)
 
 		switch string(header[0]) {
-		case broadcastHeader:
-			roomBc := newRoomBroadcast(string(header[1]), body, c, TypeTextBroadcast)
-			c.hub.broadcast <- roomBc //resend all message
-		case broadcastAudioHeader:
-			roomBc := newRoomBroadcast(string(header[1]), body, c, TypeAudioBroadcast)
-			c.hub.broadcast <- roomBc //resend all message
-		case createHeaer:
+		case packet.BroadcastHeader:
+			roomBc := newRoomBroadcast(string(header[1]), body, c, packet.TypeTextBroadcast)
+			c.hub.broadcast <- roomBc
+		case packet.BroadcastAudioHeader:
+			roomBc := newRoomBroadcast(string(header[1]), body, c, packet.TypeAudioBroadcast)
+			c.hub.broadcast <- roomBc
+		case packet.CreateHeader:
 			data := strings.Split(string(body), " ")
 			if val, err := strconv.Atoi(data[1]); err == nil {
-
 				r := newRoom(strconv.Itoa(len(c.hub.rooms)), data[0], val)
 				r.clients[c] = true
 				c.hub.createRoom <- r
-				c.send <- []byte(createHeaer + "@" + r.id)
+				c.send <- packet.SockPacket(packet.CreateHeader, []byte(r.id))
 			} else {
 				log.Println("format error ", string(data[1]))
-				c.send <- []byte(errorHeader + "@" + strconv.Itoa(FormatError))
+				c.send <- packet.SockError(packet.FormatError)
 			}
 
-		case joinHeader:
+		case packet.JoinHeader:
 			rId := string(header[1])
 			c.room = rId
 			c.hub.join <- c
-		case leaveHeader:
+		case packet.LeaveHeader:
 			c.room = string(header[1])
 			c.hub.leave <- c
-		case participantsHeader:
+		case packet.ParticipantsHeader:
 			c.hub.participants <- string(header[1])
 		}
 	}

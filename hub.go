@@ -1,6 +1,8 @@
 package main
 
 import (
+	"log"
+	"packet"
 	"strconv"
 )
 
@@ -82,23 +84,24 @@ func (h *Hub) run() {
 			if room, ok := h.rooms[roomId]; ok { // exist room
 
 				if len(room.clients) >= room.maxClients {
-					client.send <- []byte(errorHeader + "@" + strconv.Itoa(RoomFull))
+					client.send <- packet.SockError(packet.RoomFull)
 				} else if !room.clients[client] {
 					h.rooms[roomId].clients[client] = true
 				}
 			} else {
-				client.send <- []byte(errorHeader + "@" + strconv.Itoa(NotFound))
+				client.send <- packet.SockError(packet.NotFound)
 			}
 		case room := <-h.createRoom:
 			if _, ok := h.rooms[room.id]; ok { // exist room
 				for c, _ := range room.clients {
-					c.send <- []byte(errorHeader + "@" + strconv.Itoa(ExistRoom))
+					c.send <- packet.SockError(packet.ExistRoom)
 				}
 			} else {
 				h.rooms[room.id] = room
 			}
 		case client := <-h.leave:
 			roomId := client.room
+			log.Println("Leave")
 			if _, ok := h.rooms[roomId]; ok {
 				if _, ok := h.rooms[roomId].clients[client]; ok {
 					delete(h.rooms[roomId].clients, client)
@@ -107,43 +110,43 @@ func (h *Hub) run() {
 					}
 				}
 			} else {
-				client.send <- []byte(errorHeader + "@" + strconv.Itoa(NotFound))
+				client.send <- packet.SockError(packet.NotFound)
 			}
 
 		case bc := <-h.broadcast:
-			if bc.dataType == TypeAudioBroadcast {
+			if bc.dataType == packet.TypeAudioBroadcast {
 				for client := range h.rooms[bc.room].clients {
 					select {
-					case client.send <- append([]byte(broadcastAudioHeader+"@"), bc.message...):
+					case client.send <- packet.SockPacket(packet.BroadcastAudioHeader, bc.message):
 					default:
 						close(client.send)
 						delete(h.clients, client)
 					}
 				}
-			} else if bc.dataType == TypeTextBroadcast {
+			} else if bc.dataType == packet.TypeTextBroadcast {
 				for client := range h.rooms[bc.room].clients {
 					if client == bc.caster {
 						continue
 					}
 					select {
-					case client.send <- append([]byte(broadcastHeader+"@"), bc.message...):
+					case client.send <- packet.SockPacket(packet.BroadcastHeader, bc.message):
 					default:
 						close(client.send)
 						delete(h.clients, client)
 					}
 				}
 			} else {
-				bc.caster.send <- []byte(errorHeader + "@" + strconv.Itoa(IncorrectDataType))
+				bc.caster.send <- packet.SockError(packet.IncorrectDataType)
 			}
 
 		case r := <-h.participants:
 			//room still alive -> client in there
+			//log.Println("Participants client [r :", r, "]")
 			if room, ok := h.rooms[r]; ok {
-				p := []byte(strconv.Itoa(len(room.clients)))
-
-				for client := range h.rooms[r].clients {
+				count := []byte(strconv.Itoa(len(room.clients)))
+				for client := range room.clients {
 					select {
-					case client.send <- append([]byte(participantsHeader+"@"), p...):
+					case client.send <- packet.SockPacket(packet.ParticipantsHeader, count):
 					default:
 						close(client.send)
 						delete(h.clients, client)
