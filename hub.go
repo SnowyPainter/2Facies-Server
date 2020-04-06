@@ -26,6 +26,7 @@ type Room struct {
 }
 type RoomBroadcast struct {
 	room     string
+	user     string
 	caster   *Client
 	message  []byte
 	dataType int
@@ -45,7 +46,6 @@ func newHub() *Hub {
 	}
 }
 func newRoom(roomId string, title string, maxClients int) *Room {
-	//hexTitle, _ := utility.RandomHex(5)
 	return &Room{
 		id:         roomId,
 		title:      title,
@@ -53,12 +53,13 @@ func newRoom(roomId string, title string, maxClients int) *Room {
 		maxClients: maxClients,
 	}
 }
-func newRoomBroadcast(roomId string, msg []byte, broadcaster *Client, typeOfData int) *RoomBroadcast {
+func newRoomBroadcast(roomId string, userId string, msg []byte, broadcaster *Client, typeOfData int) *RoomBroadcast {
 	return &RoomBroadcast{
 		room:     roomId,
 		message:  msg,
 		caster:   broadcaster,
 		dataType: typeOfData,
+		user:     userId,
 	}
 }
 
@@ -117,7 +118,7 @@ func (h *Hub) run() {
 			if bc.dataType == packet.TypeAudioBroadcast {
 				for client := range h.rooms[bc.room].clients {
 					select {
-					case client.send <- packet.SockPacket(packet.BroadcastAudioHeader, bc.message):
+					case client.send <- packet.SockIdentifyPacket(packet.BroadcastAudioHeader, bc.user, bc.message):
 					default:
 						close(client.send)
 						delete(h.clients, client)
@@ -127,9 +128,9 @@ func (h *Hub) run() {
 				for client := range h.rooms[bc.room].clients {
 					if client == bc.caster {
 						continue
-					}
+					} // /* */ means for testing
 					select {
-					case client.send <- packet.SockPacket(packet.BroadcastHeader, bc.message):
+					case client.send <- packet.SockIdentifyPacket(packet.BroadcastHeader, bc.user, bc.message):
 					default:
 						close(client.send)
 						delete(h.clients, client)

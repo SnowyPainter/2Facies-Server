@@ -4,9 +4,7 @@ import (
 	"log"
 	"packet"
 	"strconv"
-	"strings"
 	"time"
-	"utility"
 
 	"github.com/gorilla/websocket"
 )
@@ -43,36 +41,42 @@ func (c *Client) readPump() {
 			}
 			break
 		}
-		header, body := utility.SplitHeaderBody(message)
 
-		switch string(header[0]) {
+		header, roomId := packet.GetHeader(message)
+		switch strconv.Itoa(header) {
 		case packet.BroadcastHeader:
-			roomBc := newRoomBroadcast(string(header[1]), body, c, packet.TypeTextBroadcast)
-			c.hub.broadcast <- roomBc
+			if roomId != "" {
+				pack := packet.BindPrivatePacket(message)
+				roomBc := newRoomBroadcast(pack.RoomId, pack.UserId, pack.Body, c, packet.TypeTextBroadcast)
+				c.hub.broadcast <- roomBc
+			}
 		case packet.BroadcastAudioHeader:
-			roomBc := newRoomBroadcast(string(header[1]), body, c, packet.TypeAudioBroadcast)
-			c.hub.broadcast <- roomBc
+			if roomId != "" {
+				pack := packet.BindPrivatePacket(message)
+				roomBc := newRoomBroadcast(pack.RoomId, pack.UserId, pack.Body, c, packet.TypeAudioBroadcast)
+				c.hub.broadcast <- roomBc
+			}
 		case packet.CreateHeader:
-			data := strings.Split(string(body), " ")
-			if val, err := strconv.Atoi(data[1]); err == nil {
-				r := newRoom(strconv.Itoa(len(c.hub.rooms)), data[0], val)
+			pack := packet.BindCreateRoomPacket(message)
+			if pack != nil {
+				r := newRoom(strconv.Itoa(len(c.hub.rooms)), pack.Title, pack.MaxParticipants)
 				r.clients[c] = true
 				c.hub.createRoom <- r
 				c.send <- packet.SockPacket(packet.CreateHeader, []byte(r.id))
 			} else {
-				log.Println("format error ", string(data[1]))
+				log.Println("format error ", string(pack.MaxParticipants))
 				c.send <- packet.SockError(packet.FormatError)
 			}
 
 		case packet.JoinHeader:
-			rId := string(header[1])
+			rId := string(roomId)
 			c.room = rId
 			c.hub.join <- c
 		case packet.LeaveHeader:
-			c.room = string(header[1])
+			c.room = string(roomId)
 			c.hub.leave <- c
 		case packet.ParticipantsHeader:
-			c.hub.participants <- string(header[1])
+			c.hub.participants <- string(roomId)
 		}
 	}
 }
