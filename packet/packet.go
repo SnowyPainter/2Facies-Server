@@ -28,7 +28,7 @@ const ( //Error codes
 )
 
 const ( //Socket Headers
-	ErrorHeader = "00"
+	ErrorHeader = "0"
 
 	JoinHeader   = "11"
 	LeaveHeader  = "12"
@@ -110,11 +110,11 @@ func BindCreateRoomPacket(content []byte) *CreateRoomPacket {
 }
 
 func SockError(code int) []byte {
-	body := ErrorHeader + "@" + strconv.Itoa(code)
+	body := ErrorHeader + "@@" + strconv.Itoa(code)
 	return []byte(body)
 }
 func SockPacket(header string, body []byte) []byte {
-	return append([]byte(header+"@"), body...)
+	return append([]byte(header+"@@"), body...)
 }
 func SockIdentifyPacket(header string, user string, body []byte) []byte {
 	return append([]byte(header+"@"+user+"@"), body...)

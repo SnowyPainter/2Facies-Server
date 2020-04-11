@@ -13,12 +13,13 @@ const (
 	writeWait      = 10 * time.Second
 	pongWait       = 60 * time.Second
 	pingPeriod     = (pongWait * 9) / 10
-	maxMessageSize = 35000
+	maxMessageSize = 2144
 )
 
 type Client struct {
 	Hub  *Hub
 	Room string
+	Id   string
 	Conn *websocket.Conn
 	Send chan []byte
 }
@@ -59,7 +60,8 @@ func (c *Client) ReadPump() {
 		case packet.CreateHeader:
 			pack := packet.BindCreateRoomPacket(message)
 			if pack != nil {
-				r := NewRoom(strconv.Itoa(len(c.Hub.Rooms)), pack.Title, pack.MaxParticipants)
+				r := NewRoom(strconv.Itoa(c.Hub.CreatedRoomCount), pack.Title, pack.MaxParticipants)
+				c.Hub.CreatedRoomCount++
 				r.Clients[c] = true
 				c.Hub.CreateRoom <- r
 				c.Send <- packet.SockPacket(packet.CreateHeader, []byte(r.Id))
@@ -69,11 +71,16 @@ func (c *Client) ReadPump() {
 			}
 
 		case packet.JoinHeader:
-			rId := string(roomId)
-			c.Room = rId
+			p := packet.BindPrivatePacket(message)
+			//log.Println("Leave UID ,", p.UserId, " RID :", p.RoomId)
+			c.Id = p.UserId
+			c.Room = p.RoomId
 			c.Hub.Join <- c
 		case packet.LeaveHeader:
-			c.Room = string(roomId)
+			p := packet.BindPrivatePacket(message)
+			//log.Println("Leave UID ,", p.UserId, " RID :", p.RoomId)
+			c.Id = p.UserId
+			c.Room = p.RoomId
 			c.Hub.Leave <- c
 		case packet.ParticipantsHeader:
 			c.Hub.Participants <- string(roomId)
