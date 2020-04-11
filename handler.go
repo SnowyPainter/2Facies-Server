@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
+	"socket"
 	"strconv"
 	"time"
 
@@ -13,7 +14,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-type handler struct{}
+type Handler struct{}
 type LoginData struct {
 	Id       string `json:"id" form:"id" query:"id"`
 	Password string `json:"password" form:"password" query:"password"`
@@ -36,27 +37,27 @@ type RoomData struct {
 	Max          int    `json:"Max" form:"max" query:"max"`
 }
 
-var (
-	upgrader = websocket.Upgrader{}
-)
-
-func (room *Room) ToRoomData() RoomData {
+func ToRoomData(room *socket.Room) RoomData {
 	data := RoomData{
-		Id:           room.id,
-		Max:          room.maxClients,
-		Title:        room.title,
-		Participants: len(room.clients),
+		Id:           room.Id,
+		Max:          room.MaxClients,
+		Title:        room.Title,
+		Participants: len(room.Clients),
 	}
 
 	return data
 }
 
-func (h *handler) clientVersion(c echo.Context) error {
+var (
+	upgrader = websocket.Upgrader{}
+)
+
+func (h *Handler) clientVersion(c echo.Context) error {
 	return c.String(http.StatusOK, "v0.0.1")
 }
 
 //user interact
-func (h *handler) userLogin(db *sql.DB, c echo.Context) error {
+func (h *Handler) userLogin(db *sql.DB, c echo.Context) error {
 	data := new(LoginData)
 	token := jwt.New(jwt.SigningMethodHS256)
 	claims := token.Claims.(jwt.MapClaims)
@@ -93,7 +94,7 @@ func (h *handler) userLogin(db *sql.DB, c echo.Context) error {
 		"token": t, "succeed": "true",
 	})
 }
-func (h *handler) userRegister(db *sql.DB, c echo.Context) error {
+func (h *Handler) userRegister(db *sql.DB, c echo.Context) error {
 	data := new(RegisterData)
 	c.Bind(data)
 	response := ResponseData{Result: "true", Message: "register succeed"}
@@ -111,7 +112,7 @@ func (h *handler) userRegister(db *sql.DB, c echo.Context) error {
 
 	return c.JSON(http.StatusOK, response)
 }
-func (h *handler) userLogout(db *sql.DB, c echo.Context) error {
+func (h *Handler) userLogout(db *sql.DB, c echo.Context) error {
 	user := c.Get("user").(*jwt.Token)
 	claims := user.Claims.(jwt.MapClaims)
 	id := claims["id"].(string)
@@ -124,7 +125,7 @@ func (h *handler) userLogout(db *sql.DB, c echo.Context) error {
 }
 
 //data get,set
-func (h *handler) privateInfo(db *sql.DB, c echo.Context) error {
+func (h *Handler) privateInfo(db *sql.DB, c echo.Context) error {
 	user := c.Get("user").(*jwt.Token)
 	claims := user.Claims.(jwt.MapClaims)
 	id := claims["id"].(string)
@@ -136,7 +137,7 @@ func (h *handler) privateInfo(db *sql.DB, c echo.Context) error {
 	}
 	return c.JSON(http.StatusOK, data)
 }
-func (h *handler) publicInfo(db *sql.DB, c echo.Context) error {
+func (h *Handler) publicInfo(db *sql.DB, c echo.Context) error {
 	id := c.Param("id")
 	data, err := GetUserPublic(db, id)
 	if err != nil {
@@ -144,8 +145,8 @@ func (h *handler) publicInfo(db *sql.DB, c echo.Context) error {
 	}
 	return c.JSON(http.StatusOK, data)
 }
-func (h *handler) roomList(hub *Hub, c echo.Context) error {
-	roomCount := len(hub.rooms)
+func (h *Handler) roomList(hub *socket.Hub, c echo.Context) error {
+	roomCount := len(hub.Rooms)
 	if roomCount < 1 {
 		return c.JSON(http.StatusOK, make([]RoomData, 0))
 	}
@@ -155,28 +156,28 @@ func (h *handler) roomList(hub *Hub, c echo.Context) error {
 	}
 	list := make([]RoomData, roomCount-1)
 	i := 0
-	for k, v := range hub.rooms {
+	for k, v := range hub.Rooms {
 		if i >= limit {
 			break
 		}
-		r := RoomData{Id: k, Title: v.title, Participants: len(v.clients), Max: v.maxClients}
+		r := RoomData{Id: k, Title: v.Title, Participants: len(v.Clients), Max: v.MaxClients}
 		list = append(list, r)
 		i++
 	}
 
 	return c.JSON(http.StatusOK, list)
 }
-func (h *handler) connectableRoom(hub *Hub, c echo.Context) error {
+func (h *Handler) connectableRoom(hub *socket.Hub, c echo.Context) error {
 	const searchLimit = 3
 	roomPackets := make([]RoomData, searchLimit)
 	searchCount := 0
-	for _, room := range hub.rooms {
+	for _, room := range hub.Rooms {
 		log.Println("count", searchCount)
 		if searchCount >= searchLimit {
 			break
 		}
-		if len(room.clients) < room.maxClients {
-			roomPackets[searchCount] = room.ToRoomData()
+		if len(room.Clients) < room.MaxClients {
+			roomPackets[searchCount] = ToRoomData(room)
 		}
 
 		searchCount++
@@ -188,15 +189,15 @@ func (h *handler) connectableRoom(hub *Hub, c echo.Context) error {
 //'Client' would send data then processed with readPump
 //after readPump get the data, readPump handle message to use hub. events e.g. broadcast
 //readPump -> PROCESS -> hub.broadcast or some events ...
-func (h *handler) ws(hub *Hub, c echo.Context) error {
+func (h *Handler) ws(hub *socket.Hub, c echo.Context) error {
 	ws, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {
 		return err
 	}
 
-	client := &Client{hub: hub, conn: ws, send: make(chan []byte, 256)}
-	client.hub.register <- client //request register own pointer(static) hub
-	go client.writePump()
-	go client.readPump()
+	client := &socket.Client{Hub: hub, Conn: ws, Send: make(chan []byte, 256)}
+	client.Hub.Register <- client //request register own pointer(static) hub
+	go client.WritePump()
+	go client.ReadPump()
 	return nil
 }

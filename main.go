@@ -4,21 +4,20 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
+	"socket"
 
 	"github.com/labstack/echo"
-	"github.com/labstack/echo/middleware"
-	_ "github.com/mattn/go-sqlite3"
 )
 
 type dbHandler func(db *sql.DB, c echo.Context) error
-type socketHandler func(h *Hub, c echo.Context) error
+type socketHandler func(h *socket.Hub, c echo.Context) error
 
 func newDBHandler(h dbHandler, db *sql.DB) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		return h(db, c)
 	}
 }
-func newSocketHandler(h socketHandler, hub *Hub) echo.HandlerFunc {
+func newSocketHandler(h socketHandler, hub *socket.Hub) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		return h(hub, c)
 	}
@@ -32,15 +31,15 @@ func errorCheck(err error) {
 
 func main() {
 	e := echo.New()
-	hub := newHub()
-	handlers := &handler{}
+	hub := socket.NewHub()
+	handlers := &Handler{}
 	db, err := InitDB("./database/2facies.db")
 	errorCheck(err)
 
-	go hub.run()
+	go hub.Run()
 
-	e.Use(middleware.Logger())
-	e.Use(middleware.Recover())
+	//e.Use(middleware.Logger())
+	//e.Use(middleware.Recover())
 
 	e.GET("/", func(c echo.Context) error {
 		return c.String(http.StatusOK, "")
