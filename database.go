@@ -15,18 +15,18 @@ var ErrPasswordNotMatch error = errors.New("Password don't match. cannot login")
 var ErrIdNotFound error = errors.New("Id couldn't be found")
 
 type User struct {
-	Id       int    `json:"id" form:"id" query:"id"`
+	Id       string `json:"id" form:"id" query:"id"`
 	UserId   string `json:"userId" form:"userId" query:"userId"`
 	Password string `json:"password" form:"password" query:"password"`
 	Name     string `json:"name" form:"name" query:"name"`
 	Age      string `json:"age" form:"age" query:"age"`
 	Email    string `json:"email" form:"email" query:"email"`
-	Login    int    `json:"login" form:"login" query:"login"`
+	Login    string `json:"login" form:"login" query:"login"`
 }
 type PublicUser struct {
-	Id   string `json:"id" form:"id" query:"id"`
-	Name string `json:"name" form:"name" query:"name"`
-	Age  string `json:"age" form:"age" query:"age"`
+	Id   string `json:"Id" form:"id" query:"id"`
+	Name string `json:"Name" form:"name" query:"name"`
+	Age  string `json:"Age" form:"age" query:"age"`
 }
 
 func InitDB(file string) (*sql.DB, error) {
@@ -81,9 +81,9 @@ func GetUser(db *sql.DB, userId string) (User, error) {
 }
 func GetUserPublic(db *sql.DB, userId string) (User, error) {
 	var user User
-	rows := db.QueryRow("select Id, Age, Name from useraccount where userId = $1", userId)
-	err := rows.Scan(&user.Id, &user.UserId, &user.Password, &user.Name,
-		&user.Age, &user.Email)
+	rows := db.QueryRow("select Id, UserId,Age, Name, Email, Login from useraccount where userId = $1", userId)
+	err := rows.Scan(&user.Id, &user.UserId, &user.Age, &user.Name,
+		&user.Email, &user.Login)
 	if err != nil {
 		return User{}, err
 	}
@@ -97,7 +97,7 @@ func Login(db *sql.DB, userId string, password string) error {
 		return ErrIdNotFound
 	} else if pwerr := CompareBcrypt([]byte(u.Password), []byte(password)); pwerr != nil { // not same
 		return ErrPasswordNotMatch
-	} else if u.Login == 1 {
+	} else if u.Login == "1" {
 		return ErrAlreadyLogined
 	}
 	tx, _ := db.Begin()

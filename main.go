@@ -7,6 +7,7 @@ import (
 	"socket"
 
 	"github.com/labstack/echo"
+	"github.com/labstack/echo/middleware"
 )
 
 type dbHandler func(db *sql.DB, c echo.Context) error
@@ -38,8 +39,8 @@ func main() {
 
 	go hub.Run()
 
-	//e.Use(middleware.Logger())
-	//e.Use(middleware.Recover())
+	e.Use(middleware.Logger())
+	e.Use(middleware.Recover())
 
 	e.GET("/", func(c echo.Context) error {
 		return c.String(http.StatusOK, "")

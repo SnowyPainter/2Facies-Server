@@ -152,8 +152,6 @@ func (h *Hub) Run() {
 			}
 
 		case r := <-h.Participants:
-			//room still alive -> client in there
-			//log.Println("Participants client [r :", r, "]")
 			if room, ok := h.Rooms[r]; ok {
 				count := []byte(strconv.Itoa(len(room.Clients)))
 				for client := range room.Clients {
